@@ -1,0 +1,731 @@
+---
+title: "Práctica Métodos Supervisados"
+author: "Francisco Javier Gómez Sánchez"
+date: "17/12/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+# Descripción del problema
+
+Para el proyecto de la asignatura, he decidido escoger el dataset de enfermedades de corazón (‘_heart diseases_’) de la Universidad de California, Irvine (UCI). El objetivo es predecir, a partir de una serie de características, si hay una enfermedad cardíaca o no. Originalmente, la clase a predecir estaba comprendida entre los valores 0 y 4, puesto que se predecían varios tipos de cardiopatía. Sin embargo, se simplificó el problema para detectar si existe una enfermedad de corazón o no. Es decir, estamos ante un problema de clasificación binaria.
+
+He escogido este dataset porque la investigación en medicina supone un gran avance para mejorar la vida de las personas.
+
+
+Respecto a los algoritmos que escogidos para resolver el problema, serán los siguientes:
+
+ - Stochastic Gradient Boosting
+ 
+ - Neural Network
+ 
+ - Random Forest
+
+Como métrica principal de comparación de los modelos, uso MAE. Los modelos predicen la salida entre 0 y 1, por lo que se puede calcular con esta métrica la distancia entre la predicción y el valor real (0 ó 1). Además, se verán otras métricas en el resumen de los modelos, como son RMSE o Kappa. 
+
+El dataset original consta de 76 atributos, pero todas las investigaciones publicadas usan un subset de 14 de ellos. Por tanto, se va a trabajar con el mismo subset que han utilizado los investigadores.
+A continuación, una tabla con los atributos del dataset.
+
+
+| *Atributo*                                                               | *Descripción*                                                                                        | *Nombre en el csv* |
+|--------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------|--------------------|
+| Edad                                                                     | En años                                                                                              | age                |
+| Sexo                                                                     | 0 (femenino), 1 (masculino)                                                                          | sex                |
+| Dolor de pecho                                                           | 1 (angina normal), 2 (angina<br>atípica), 3 (dolor no anginoso),<br>4 (asintomático)                 | cp                 |
+| Presión de la sangre en reposo                                           | En mmHg al ingreso al hospital                                                                       | trestbps           |
+| Colesterol sérico                                                        | En mg/dl                                                                                             | chol               |
+| Nivel de azúcar en sangre <br>en ayunas > 120 mg/dl                      | 0 (falso), 1 (verdadero)                                                                             | fbs                |
+| Resultados electrocardiograma<br>en reposo                               | 0 (posible hipertrofia<br>ventricular izquierda),<br>1 (normal), 2 (anormalidad <br>en la onda ST-T) | restecg            |
+| Pulsaciones de corazón máximas<br>alcanzadas                             | -                                                                                                    | thalach            |
+| Angina inducida por ejercicio                                            | 0 (falso), 1 (verdadero)                                                                             | exang              |
+| Depresión de la onda ST inducida por<br> el ejercicio respecto al reposo | -                                                                                                    | oldpeak            |
+| Pendiente del pico del segmento ST                                       | 0 (descendente), 1 (ascendente)                                                                      | slope              |
+| Número de vasos coloreados por<br>fluoroscopia                           | De 0 a 3                                                                                             | ca                 |
+| Talio inyectado durante el test<br>de estrés nuclear                     | 3 (normal), 6 (defecto corregido),<br>7 (defecto reversible)                                         | thal               |
+| Target                                                                   | 0 (enfermedad), 1 (no enfermedad)                                                                    | target             |
+
+
+
+# Análisis de las variables
+
+Con la función glimpse se pueden ver algunos valores que toman las variables del dataset.
+
+```{r, echo=FALSE, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(corrplot)
+library(ggcorrplot)
+library(caret)
+library(data.table)
+library(tidyverse)
+library(mlbench)
+# He tenido que instalar gbm para el stochastic gradient boosting
+
+```
+
+
+```{r}
+
+data <- read.csv(file = 'heart.csv')
+colnames(data) <- c("age", "sex", "cp", "trestbps", "chol", "fbs", "restecg", 
+                    "thalach", "exang", "oldpeak", "slope", "ca", "thal", 
+                    "target")
+glimpse(data)
+```
+
+Ahora se procede a analizar las distintas variables del conjunto de datos.
+
+## Variable a predecir
+
+```{r}
+ggplot(data,aes(target,fill=as.factor(target)))+
+    geom_bar(stat="count")+
+    guides(fill=F)+
+    labs(x="Target", y="Número de elementos")
+
+```
+
+Como podemos ver, la clase a predecir no presenta un signo de desbalanceo.
+
+## Variable age
+
+```{r}
+g1 <- ggplot(data,aes(age,col=as.factor(target),fill=as.factor(target)))+
+  geom_density(alpha=0.2)+
+  guides(col=F)+
+  labs(fill="Target",x="Age")
+
+g2 <- ggplot(data,aes(as.factor(target),age,fill=as.factor(target)))+
+  geom_boxplot(alpha=0.2)+
+  labs(y="Age",x="Target",fill="Target")
+
+grid.arrange(g1, g2, ncol=2)
+
+```
+
+Se puede apreciar que las personas que sufren del corazón presentan una distribución distinta a las personas que no padecen ninguna enfermedad.
+
+A continuación. un gráfico con la distribución de la frecuencia de la los valores en formato diagrama de barras.
+
+```{r}
+data %>% 
+  group_by(age) %>% 
+  count() %>% 
+  filter(n > 10) %>% 
+  ggplot()+
+  geom_col(aes(age, n), fill = "navyblue")+
+  xlab("Age")  +
+  ylab("Número de elementos")
+
+```
+
+
+## Variable sex
+
+```{r}
+g1 <- ggplot(data,aes(as.factor(sex),fill=as.factor(target)))+
+     geom_bar(stat="count")+
+     labs(x="Sex",fill="Target", y="Número de elementos")
+g2 <- ggplot(data,aes(as.factor(sex),fill=as.factor(target)))+
+     geom_bar(stat="count",position="fill")+
+     labs(x="Sex",fill="Target",y="Porcentajes")
+
+grid.arrange(g1, g2, ncol=2)
+
+```
+
+Se aprecia que el sexo masculino tiene un mayor ratio de enfermedad del corazón respecto al sexo femenino.
+
+## Variable cp
+
+```{r}
+g1 <- ggplot(data,aes(as.factor(cp),fill=as.factor(target)))+
+  geom_bar(stat="count")+
+  labs(x="Tipo de dolor de pecho", fill="Target", y="Número de elementos" )
+
+g2 <- ggplot(data,aes(as.factor(cp),fill=as.factor(target)))+
+  geom_bar(stat="count",position="fill")+
+  labs(x="Tipo de dolor de pecho",fill="Target",y="Porcentajes")
+
+grid.arrange(g1, g2, ncol=2)
+
+```
+
+
+## Variable trestbps
+
+```{r}
+g1 <- ggplot(data,aes(trestbps,col=as.factor(target),fill=as.factor(target)))+
+  geom_density(alpha=0.2)+
+  guides(col=F)+
+  labs(fill="Target",x="Presión sanguínea en reposo")
+
+g2 <- ggplot(data,aes(as.factor(target),trestbps,fill=as.factor(target)))+
+  geom_boxplot(alpha=0.2)+
+  labs(y="Presión sanguínea en reposo",x="Target",fill="Target")
+
+grid.arrange(g1, g2, ncol=2)
+
+```
+
+
+## Variable chol
+
+
+```{r}
+g1 <- ggplot(data,aes(chol,col=as.factor(target),fill=as.factor(target)))+
+  geom_density(alpha=0.2)+
+  guides(col=F)+
+  labs(fill="Target",x="Colesterol sérico en mg/dl")
+
+g2 <- ggplot(data,aes(as.factor(target),chol,fill=as.factor(target)))+
+  geom_boxplot(alpha=0.2)+
+  labs(y="Colesterol sérico en mg/dl",x="Target",fill="Target")
+
+grid.arrange(g1, g2, ncol=2)
+
+```
+
+Representación de los niveles de colesterol por edad y sexo.
+
+```{r}
+data %>%
+  ggplot(aes(x=age,y=chol,color=sex, size=chol))+
+  geom_point(alpha=0.7)+xlab("Edad (age)") +
+  ylab("Colesterol (chol)")+
+  guides(fill = guide_legend(title = "Gender"))
+
+```
+
+
+## Variable fbs
+
+
+```{r}
+g1 <- ggplot(data,aes(as.factor(fbs),fill=as.factor(target)))+
+  geom_bar(stat="count")+
+  labs(x="Nivel de azúcar en ayunas > 120 mm/dL", y="Número de elementos",
+       fill="Target")
+
+g2 <- ggplot(data,aes(as.factor(fbs),fill=as.factor(target)))+
+  geom_bar(stat="count",position="fill")+
+  labs(x="Nivel de azúcar en ayunas>120mm/dL",fill="Target",y="Porcentajes")
+
+grid.arrange(g1, g2, ncol=2)
+
+```
+
+
+
+## Variable restecg
+
+```{r}
+g1 <- ggplot(data,aes(as.factor(restecg),fill=as.factor(target)))+
+  geom_bar(stat="count")+
+  labs(x="Resultados ECG en reposo",x="Número de elementos",fill="Target")
+
+g2 <- ggplot(data,aes(as.factor(restecg),fill=as.factor(target)))+
+  geom_bar(stat="count",position="fill")+
+  labs(x="Resultados ECG en reposo",fill="Target",y="Porcentajes")
+
+grid.arrange(g1, g2, ncol=2)
+
+```
+
+
+## Variable thalch
+
+```{r}
+g1 <-  ggplot(data,aes(thalach,col=as.factor(target),fill=as.factor(target)))+
+  geom_density(alpha=0.2)+
+  guides(col=F)+
+  labs(fill="Target",x="Pulsaciones máximas alcanzadas")
+
+g2 <- ggplot(data,aes(as.factor(target),thalach,fill=as.factor(target)))+
+  geom_boxplot(alpha=0.2)+
+  labs(y="Pulsaciones máximas alcanzadas",x="Target",fill="Target")
+
+grid.arrange(g1, g2, ncol=2)
+
+```
+
+
+## Variable exang
+
+```{r}
+g1 <- ggplot(data,aes(as.factor(exang),fill=as.factor(target)))+
+  geom_bar(stat="count")+
+  labs(x="Angina inducida por ejercicio",y="Número de elementos",fill= "Target")
+
+g2 <- ggplot(data,aes(as.factor(exang),fill=as.factor(target)))+
+  geom_bar(stat="count",position="fill")+
+  labs(x="Angina inducida por ejercicio",fill="Target",y="Porcentajes")
+
+grid.arrange(g1, g2, ncol=2)
+
+```
+
+
+## Variable oldpeak
+
+```{r}
+g1 <- ggplot(data,aes(oldpeak,col=as.factor(target),fill=as.factor(target)))+
+  geom_density(alpha=0.2)+
+  guides(col=F)+
+  labs(fill="Target",x="Depresión onda ST inducida por el ejercicio respecto 
+       al reposo")
+
+g2 <- ggplot(data,aes(as.factor(target),thalach,fill=as.factor(target)))+
+  geom_boxplot(alpha=0.2)+
+  labs(y="Depresión onda ST inducida por el ejercicio respecto al reposo",
+       x="Target",fill="Target")
+
+grid.arrange(g1, g2, ncol=2)
+
+```
+
+
+
+## Variable slope
+
+```{r}
+g1 <- ggplot(data,aes(as.factor(slope),fill=as.factor(target)))+
+  geom_bar(stat="count")+
+  labs(x="Pendiente del pico del segmento ST",y="Número de elementos",
+       fill="Target")
+
+g2 <- ggplot(data,aes(as.factor(slope),fill=as.factor(target)))+
+  geom_bar(stat="count",position="fill")+
+  labs(x="Pendiente del pico del segmento ST",fill="Target",y="Porcentajes")
+
+grid.arrange(g1, g2, ncol=2)
+
+```
+
+
+## Variable ca
+
+```{r}
+g1 <- ggplot(data,aes(as.factor(ca),fill=as.factor(target)))+
+  geom_bar(stat="count")+
+  labs(x="Número de vasos coloreados por fluoroscopia",y="Número de elementos",
+       fill="Target")
+
+g2 <- ggplot(data,aes(as.factor(ca),fill=as.factor(target)))+
+  geom_bar(stat="count",position="fill")+
+  labs(x="Número de vasos coloreados por fluoroscopia",fill="Target",
+       y="Porcentajes")
+
+grid.arrange(g1, g2, ncol=2)
+
+```
+
+
+## Variable thal
+
+```{r}
+g1 <- ggplot(data,aes(as.factor(thal),fill=as.factor(target)))+
+  geom_bar(stat="count")+
+  labs(x="Thal",y="Número de elementos",fill="Target")
+
+g2 <- ggplot(data,aes(as.factor(thal),fill=as.factor(target)))+
+  geom_bar(stat="count",position="fill")+
+  labs(x="Thal",fill="Target",y="Porcentajes")
+
+grid.arrange(g1,g2,ncol=2)
+
+```
+
+
+
+## Correlaciones entre variables
+
+Una vez ploteadas las distribuciones de las variables del dataset, se procede a evaluar la relación que hay entre algunas de ellas. 
+
+
+Comparación entre el colesterol y el tipo de dolor de pecho.
+
+```{r}
+data %>%
+  ggplot(aes(x=sex,y=chol))+
+  geom_boxplot(fill="#D55E00")+
+  xlab("Sexo")+
+  ylab("Colesterol")+
+  facet_grid(~cp)
+
+```
+
+
+Relación entre la presión sanguínea y el tipo de dolor de pecho.
+
+
+```{r}
+data %>%
+  ggplot(aes(x=sex,y=trestbps))+
+  geom_boxplot(fill="darkorange")+
+  xlab("Sexo")+
+  ylab("Presión sanguínea")+
+  facet_grid(~cp)
+
+```
+
+
+Tabla de correlaciones.
+
+```{r}
+cor_heart <- cor(data[,1:13])
+
+```
+
+Se calcula también una tabla gráfica que nos muestre la relación que existe entre las variables.
+
+```{r}
+corrplot(cor_heart, method = "ellipse", type="upper",)
+
+```
+
+
+```{r}
+ggcorrplot(cor_heart,lab = T)
+
+```
+
+
+# Resumen de estadísticas
+
+Con la función summary podemos ver un resumen de los valores de las variables que nos pueden orientar sobre su escala.
+
+```{r}
+summary(data)
+```
+
+# Feature Selection
+
+Se crea una matriz de correlación a partir de los atributos y se identifican los que son altamente correlacionados. Por lo general, se desea eliminar atributos con una correlación absoluta de 0,75 o superior.
+
+```{r}
+correlationMatrix <- cor(data[,1:13])
+print(correlationMatrix)
+# encontrar los atributos altamente correlados (>0.75)
+highlyCorrelated <- findCorrelation(correlationMatrix, cutoff=0.75)
+# índices de los atributos altamente correlados
+print(highlyCorrelated)
+```
+
+No se encuentran parámetros altamente correlados.
+
+
+# Feature extraction. Principal Component Analysis (PCA)
+
+Es interesante ver si se puede encontrar una relación lineal entre las variables que describen los datos pero con una dimensionalidad menor. Para ello usamos el método PCA.
+
+Los datos se escalan sustrayendoles la media de su columna y se escalan a la desviación estándar.
+
+
+```{r}
+pca <- prcomp(data[,1:13], center = TRUE, scale = TRUE)
+```
+
+```{r}
+summary(pca)
+```
+
+
+Se va a plotear la varianza de las componentes principales calculadas.
+
+```{r}
+screeplot(pca, type = "l", npcs = 15, main = "Gráfico de sedimentación de los
+          componentes principales")
+abline(h = 1, col="red", lty=5)
+legend("topright", legend=c("Eigenvalue = 1"), col=c("red"), lty=5, cex=0.6)
+
+```
+
+
+```{r}
+cumpro <- cumsum(pca$sdev^2 / sum(pca$sdev^2))
+plot(cumpro[0:15], xlab = "PC #", ylab = "Cantidad de varianza explicada",  
+     main = "Gráfica de varianza acumulada")
+abline(v = 5, col="blue", lty=5)
+abline(h = 0.594, col="blue", lty=5)
+abline(v = 10, col="red", lty=5)
+abline(h = 0.9, col="red", lty=5)
+legend("topleft", legend=c("Corte con PC5", "Corte con PC10"),
+      col=c("blue", "red"), lty=5, cex=0.6)
+
+```
+
+Como se aprecia, aunque los 5 primeros componentes tienen un autovalor  mayor a 1, su varianza acumulada es inferior al 60% , por lo que perderíamos mucha información si usasemos esas componentes como variables para representar el dataset completo. Para perder únicamente una varianza del 10% debemos de usar los 10 primeros componentes principales del PCA. Reducir la dimensionalidad de 13 a 10 variables no parece un gran avance, por lo que trabajaremos con las variables originales y así mantener toda la información de los datos.
+
+A continuación se muestran las 2 primeras componentes del análisis PCA.
+
+```{r}
+plot(pca$x[,1],pca$x[,2], xlab="PC1", ylab = "PC2", main = "PC1 / PC2")
+```
+
+No se aprecia ninguna correlación entre las 2 variables principales.
+
+
+# Training y test dataset
+
+En primer lugar, vamos a reordenar los datos para que aparezcan de la manera más aleatoria posible y evitar que todos los datos de una clase estén contenidos en su mayoría en uno de los datasets de training o testing.
+
+```{r}
+set.seed(107)
+rows_rand <- sample(nrow(data))
+
+```
+
+Tenemos 303 datos en total. Para hacer la división de estos, voy a utilizar un 80% para el entrenamiento (242) y un 20% para el test (61). Utilizo la función createDataPartition().
+
+```{r}
+data_s <- data[rows_rand, ]
+inTrain <- createDataPartition(y=data_s$target, p=.8, list=FALSE)
+training <- data_s[inTrain,]
+testing <- data_s[-inTrain,]
+
+```
+
+Se pueden utilizar otras funciones como CreateFolds() y createResample(). La última se puede utilizar para crear muestras mediante bootstrap y la primera se puede utilizar para generar agrupaciones de validación cruzada equilibradas a partir del conjunto de datos. 
+
+
+# Modelos
+
+En primer lugar, se crean las opciones de control, que van a ser las mismas para todos los modelos. 
+Utilizo validación cruzada (se entrenan k modelos distintos, cada uno entrenado con todos los datos de entrenamiento excepto con una 1/k parte de los datos, usada para validarlos y distinta para cada uno de los k modelos). He escogido k=10.
+
+```{r}
+fitControl <- trainControl(## 10-fold CV
+    method = "repeatedcv",
+    number = 10,
+    ## repeated ten times
+    repeats = 10)
+
+```
+
+
+Se pueden escoger otros métodos de control (con el parámetro method) aparte de la validación cruzada. Entre los otros métodos disponibles tenemos bootstrap (“boot”) o validación cruzada tipo leave-one-out o jacknife (“LOOCV”).
+
+En la función de control también podemos controlar el número de divisiones (k) de la validación cruzada (number) o el número de modelos que se van a entrenar (repeats).
+
+
+## Métrica de evaluación
+
+Para determinar cuáles son los mejores modelos se va a utilizar el Mean Absolut Error (MAE). En el entrenamiento de los mismos, se pueden ver también otras métricas como Root Mean Squared Error (RMSE). También se evaluarán luego las predicciones y se comparan mediante el accuracy de las mismas.
+
+
+## tuneLength y tuneGrid
+
+El parámetro tuneLength define el número total de combinaciones de parámetros que se evaluarán. Se va a usar esta estrategia para el entrenamiento de los modelos de neural network.
+
+El parámetro tuneGrid nos permite decidir qué valores tomarán los parámetros, mientras que tuneLength solo limita el número de parámetros predeterminados a utilizar. Además, tuneGrid puede tomar un conjunto de datos para cada parámetro de ajuste. Los nombres de las columnas deben ser los mismos que los argumentos de la función de ajuste. La función train() ajustará el modelo sobre cada combinación de valores de tuneGrid. Se va a usar esta estrategia para el entrenamiento de los modelos de Stochastic Gradient Boosting.
+
+
+
+## Stochastic Gradient Boosting
+
+El Modelo Stochastic Gradient Boosting consiste en la construcción de modelos de regresión aditiva ajustando secuencialmente una función parametrizada simple por mínimos cuadrados en cada iteración.
+
+Parámetros de control:
+
+ - n.trees: número total de árboles a tunear.
+ - interaction.depth: número de divisiones en cada árbol (a mayor número, mayor complejidad).
+ - shrinkage: controla la rapidez con la que se actualizan los parámetros mediante el descenso del gradiente.
+ - n.minobsinnode: número mínimo de observaciones permitidas en los nodos terminales de los árboles.
+ 
+Se entrenan 2 modelos distintos, uno con preprocesado de datos y otro sin preprocesado. Además, uso tuneGrid para el ajuste de parámetros.
+
+```{r}
+sgbGrid <-  expand.grid(interaction.depth = c(1, 5, 9), 
+                        n.trees = seq(1, 31, by=5)*30, 
+                        shrinkage = 0.1,
+                        n.minobsinnode = 20)
+                        
+```
+
+
+Entrenamiento sin preprocesado:
+```{r, results="hide"}
+sgbheart <- train(target~ ., data = training, method="gbm", trControl=fitControl,
+                  tuneGrid = sgbGrid)
+```
+
+```{r}
+sgbheart
+```
+
+
+Entrenamiento con preprocesado:
+```{r, results="hide"}
+sgbheartproc <- train(target~ ., data = training, method="gbm", 
+                      trControl=fitControl, preProc=c("center","scale"),
+                      tuneGrid = sgbGrid)
+```
+
+```{r}
+sgbheartproc
+```
+
+
+
+
+El preprocesado ha consistido en escalar los datos restando el valor del mismo por la media de la variable, dividiendo entre la desviación típica. Sin embargo, esta normalización no se refleja en una mejora en el proceso de aprendizaje. 
+
+
+## Neural Network
+
+Las redes neuronales están compuestas por un conjunto de neuronas interconectadas entre sí mediante enlaces.
+Cada neurona toma como entradas las salidas de las neuronas de las capas anteriores, cada una de esas entradas se multiplica por un peso, se agregan los resultados parciales y mediante una función de activación se calcula la salida. Esta salida es, a su vez, la entrada de la neurona a la que precede.
+La red neuronal que he escogido es simple, constando de una única capa escondida.
+
+Parámetros de control:
+
+ - size: número de neuronas en la capa escondida.
+ - decay: parámetro de regularización para evitar overfitting.
+
+Por defecto, la salida de la red pasa por una activación sigmoidal, prediciendo valores entre 0 y 1, que coincide con los valores de nuestro dataset a predecir. 
+
+Se usa tuneLength = 4 para entrenar los modelos.
+
+Entrenamiento sin preprocesado:
+```{r results="hide", message=FALSE}
+nnheart <- train(target~ ., data = training, method="nnet", trControl=fitControl,
+                 tuneLength=4)
+```
+
+```{r}
+nnheart
+```
+
+Entrenamiento con procesado:
+```{r results="hide", message=FALSE}
+nnheartproc <- train(target~ ., data = training, method="nnet", 
+                     trControl=fitControl, preProc=c("center","scale"),
+                     tuneLength=4)
+```
+
+```{r}
+nnheartproc
+```
+
+En este caso, entrenar con preprocesado ha implicado conseguir unos errores más bajos en el error de entrenamiento.
+
+## Random Forest
+
+Son un método de aprendizaje por ensamble (crea múltiples modelos y los combina para predecir mejores resultados). Se construyen multitud de árboles de decisión durante el entrenamiento y la salida es la moda (para clasificación) o la media (para regresión) de los distintos árboles individuales.
+
+Parámetros de control:
+
+ - mtry: número de variables muestreadas al azar como candidatas en cada división.
+ - splitrule: regla para dividir los nodos de los árboles.
+ - min.node.size: número mínimo de observaciones en un nodo terminal.Un valor bajo conduce a árboles con una profundidad mayor, se realizan más divisiones hasta los nodos terminales.
+
+Entrenamiento sin preprocesado:
+```{r results="hide"}
+rfheart <- train(target~ ., data = training, method="ranger", 
+                 trControl=fitControl)
+
+```
+
+```{r}
+rfheart
+```
+
+Entrenamiento con preprocesado:
+```{r results="hide"}
+rfheartproc <- train(target~ ., data = training, method="ranger",
+                     trControl=fitControl, preProc=c("center","scale"))
+
+```
+
+
+```{r}
+rfheartproc
+```
+
+En este caso no se aprecian diferencias entre usar preprocesado o no.
+
+
+# Predicciones
+
+## Stochastic Gradient Boosting
+```{r}
+sgbpreds <- predict(sgbheart, newdata = testing)
+confusionMatrix(factor(round(sgbpreds),levels = 0:1),factor(testing$target, 
+                                                            levels = 0:1))
+
+```
+
+
+## Neural Network
+
+```{r}
+nnpreds <- predict(nnheartproc, newdata = testing)
+confusionMatrix(factor(round(nnpreds), levels = 0:1),factor(testing$target,
+                                                            levels = 0:1) )
+```
+
+
+## Random Forest
+
+```{r}
+rfpreds <- predict(rfheart, newdata = testing)
+confusionMatrix(factor(round(rfpreds), levels = 0:1),factor(testing$target,
+                                                            levels = 0:1) )
+
+```
+
+
+# Resultados
+
+El modelo que mejor ha evaluado los datos de testing ha sido el Stochastic Gradient Boosting. Logrando un accuracy de casi 0.82. Por detrás queda el modelo de redes neuronales, con un valor de 0.8. Finalmente, el peor modelo es el de Random Forest, con un accuracy de 0.78. Sin embargo, la especifidad del Random Forest es mayor que la de la red neuronal, pero inferior al mejor modelo.
+
+
+La función resamples() proporciona métodos para recopilar, analizar y visualizar un conjunto de resultados de muestreo de un conjunto de datos común. Con la función summary() podemos visualizar un resumen de la comparación entre los modelos. Se van a analizar por parejas.
+
+Finalmente, la función diff() calcula las diferencias entre todos los valores consecutivos de un vector.
+
+## Neural Network - Stochastic Gradient Boosting
+
+```{r}
+resamps.nn.sgb=resamples(list(nn=nnheartproc,sgb=sgbheart))
+summary(resamps.nn.sgb)
+xyplot(resamps.nn.sgb,what="BlandAltman")
+
+diffs.nn.sgb<-diff(resamps.nn.sgb)
+summary(diffs.nn.sgb)
+
+```
+
+
+## Neural Network - Random Forest
+
+```{r}
+resamps.nn.rf=resamples(list(nn=nnheartproc,rf=rfheart))
+summary(resamps.nn.rf)
+xyplot(resamps.nn.rf,what="BlandAltman")
+
+diffs.nn.rf<-diff(resamps.nn.rf)
+summary(diffs.nn.rf)
+
+```
+
+## Stochastic Gradient Boosting - Random Forest
+
+```{r}
+resamps.sgb.rf=resamples(list(sgb=sgbheart,rf=rfheart))
+summary(resamps.sgb.rf)
+xyplot(resamps.sgb.rf,what="BlandAltman")
+
+diffs.sgb.rf<-diff(resamps.sgb.rf)
+summary(diffs.sgb.rf)
+
+```
+
+En todos los modelos se aprecia una gran dispersión cuando se compara el MAE.
+
+
+
+
