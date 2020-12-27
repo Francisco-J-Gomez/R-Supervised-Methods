@@ -1,14 +1,9 @@
 # R-Supervised-Methods
 
-<svg width="100" height="100" xmlns="http://www.w3.org/2000/svg">
-<foreignObject width="100" height="100">
-    <div xmlns="http://www.w3.org/1999/xhtml">
-        <ul>
-            <li>![](practica_fjgs_ms.svg)</li>
-        </ul>
-        <!-- Other embed HTML element/text into SVG -->
-    </div>
-</foreignObject>
-</svg>
-
+In this repository, I explore the __heart diseases__ dataset from University of California, Irvine (UCI). After the exploration, I analyze the variables and try to find the relevant features with methods like PCA. After that, I train and evaluate the next supervised models:
+ - Stochastic Gradient Boosting
+ - Neural Network
+ - Random Forest
+ 
+ The project has been developed in R language.
 
